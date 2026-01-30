@@ -19,14 +19,16 @@ $schools | ForEach-Object {
     $students | ForEach-Object {
         $id = $_.Id
 
-        $licensesToRemove = Get-MgBetaUserLicenseDetail -UserId $id | Where-Object { $_.SkuPartNumber -ne $requiredLicense.SkuPartNumber }
+        $licenses = Get-MgBetaUserLicenseDetail -UserId $id
+
+        $licensesToRemove = $licenses | Where-Object { $_.SkuPartNumber -ne $requiredLicense.SkuPartNumber }
         $licensesToRemove | ForEach-Object {
             Remove-MgBetaUserLicense -UserId $id -SkuId $_.SkuId
         }
 
         Write-Host "$($licensesToRemove.Count) licenses removed for $($_.DisplayName)"
 
-        if ($licensesToRemove.Count -eq 0)
+        if (($licenses | Where-Object { $_.SkuPartNumber -eq $requiredLicense.SkuPartNumber }).Count -eq 0)
         {
             Add-MgBetaUserLicense -UserId $id -SkuId $requiredLicense.SkuId
             Set-MgBetaUser -UserId $id -UsageLocation "GB"
