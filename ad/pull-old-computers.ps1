@@ -10,6 +10,7 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2)
     exit
 }
 
+$date = (Get-Date).AddDays(-30)
 $computers = get-adcomputer -filter {
     enabled -eq $true
     -and operatingsystem -like 'Windows 1*'
