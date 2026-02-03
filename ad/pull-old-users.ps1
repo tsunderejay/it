@@ -10,6 +10,7 @@ if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2)
     exit
 }
 
+$date = (Get-Date).AddDays(-30)
 $users = get-aduser -filter {
     enabled -eq $true
     -and lastlogondate -lt $date
