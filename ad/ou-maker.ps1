@@ -1,7 +1,7 @@
 # i used this script to create matching OUs across multiple sites at my current job
 
 # check we are running from a domain controller
-if ((Get-WmiObject -Class Win32_ComputerSystem).ProductType -eq 3)
+if ((Get-WmiObject -Class Win32_OperatingSystem).ProductType -eq 2)
 {
     Write-Host "running from a domain controller"
 } else
