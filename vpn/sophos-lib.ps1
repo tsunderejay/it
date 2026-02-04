@@ -225,20 +225,23 @@ function Disable-SCConnection
     .DESCRIPTION
     This function disconnects from a specified VPN connection. You can specify the connection
     using either the connection ID (name) or the display name. The function will automatically
-    find the connection and disconnect from it.
+    find the connection and disconnect from it, then wait for the disconnection to complete.
 
     .PARAMETER ConnectionId
     The connection identifier. Can be either:
     - Connection ID (name): The internal connection identifier
     - Display Name: The user-friendly display name of the connection
 
+    .PARAMETER TimeoutSeconds
+    How long to wait for the disconnection to complete (default: 60 seconds)
+
     .EXAMPLE
     Disable-SCConnection -ConnectionId "MyVPN"
     Disconnects from a connection with display name "MyVPN"
 
     .EXAMPLE
-    Disable-SCConnection -ConnectionId "connection-123"
-    Disconnects from a connection with connection ID "connection-123"
+    Disable-SCConnection -ConnectionId "connection-123" -TimeoutSeconds 60
+    Disconnects from connection "connection-123" with 60 second timeout
 
     .NOTES
     Use Get-SCConnectionList to see all available connections and their identifiers.
@@ -246,7 +249,8 @@ function Disable-SCConnection
 
     param(
         [Parameter(Mandatory=$true)]
-        [string]$ConnectionId   # Can be either the connection name/ID or display name
+        [string]$ConnectionId,   # Can be either the connection name/ID or display name
+        [int]$TimeoutSeconds = 60
     )
 
     $activeConnections = Get-SCActiveConnections
@@ -284,10 +288,30 @@ function Disable-SCConnection
 
     Write-Host "Disconnecting $currentState connection: '$displayName'"
 
+    Write-Host "Disconnecting '$displayName' ($actualConnectionId)..." -ForegroundColor Yellow
+
     $output = & (Get-SCCliPath) disable -n $actualConnectionId
-    if ($output -match "was disabled")
+
+    # Wait for connection to reach disconnected state (0) regardless of initial output
+    $elapsed = 0
+    do
     {
-        Write-Host "Connection '$displayName' ($actualConnectionId) disabled"
+        Start-Sleep -Seconds 1
+        $elapsed++
+        $currentConnection = Get-SCList | Where-Object { $_.name -eq $actualConnectionId }
+        Write-Host "." -NoNewline -ForegroundColor Gray
+    } while ($currentConnection -and $currentConnection.vpn_state -ne "0" -and $elapsed -lt $TimeoutSeconds)
+
+    Write-Host ""  # New line after dots
+
+    # Check final state
+    $finalConnection = Get-SCList | Where-Object { $_.name -eq $actualConnectionId }
+    if ($finalConnection -and $finalConnection.vpn_state -eq "0")
+    {
+        Write-Host "Connection '$displayName' ($actualConnectionId) disconnected" -ForegroundColor Green
+    } elseif ($elapsed -ge $TimeoutSeconds)
+    {
+        Write-Warning "Timeout waiting for disconnection of '$displayName' ($actualConnectionId)"
     } else
     {
         Write-Warning "Failed to disable connection '$displayName' ($actualConnectionId)"
@@ -303,7 +327,8 @@ function Enable-SCConnection
     .DESCRIPTION
     This function connects to a specified VPN connection. You can specify the connection
     using either the connection ID (name) or the display name. If another VPN is already
-    connected, you can use the -Force parameter to disconnect it first.
+    connected, you can use the -Force parameter to disconnect it first. The function waits
+    for the connection to be fully established before returning.
 
     .PARAMETER ConnectionId
     The connection identifier. Can be either:
@@ -314,13 +339,16 @@ function Enable-SCConnection
     If specified, will automatically disconnect any existing VPN connection before
     connecting to the specified one.
 
+    .PARAMETER TimeoutSeconds
+    How long to wait for the connection to be established (default: 60 seconds)
+
     .EXAMPLE
     Enable-SCConnection -ConnectionId "MyVPN"
     Connects to a connection with display name "MyVPN"
 
     .EXAMPLE
-    Enable-SCConnection -ConnectionId "connection-123" -Force
-    Connects to connection "connection-123", disconnecting any existing connection first
+    Enable-SCConnection -ConnectionId "connection-123" -Force -TimeoutSeconds 60
+    Connects to connection "connection-123" with 60 second timeout, disconnecting any existing connection first
 
     .NOTES
     Use Get-SCConnectionList to see all available connections and their identifiers.
@@ -329,7 +357,8 @@ function Enable-SCConnection
     param(
         [Parameter(Mandatory=$true)]
         [string]$ConnectionId,   # Can be either the connection name/ID or display name
-        [switch]$Force
+        [switch]$Force,
+        [int]$TimeoutSeconds = 60
     )
 
     # Find connection by name or display name
@@ -363,12 +392,30 @@ function Enable-SCConnection
         }
     }
 
+    Write-Host "Connecting to '$displayName' ($actualConnectionId)..." -ForegroundColor Yellow
+
     $output = & (Get-SCCliPath) enable -n $actualConnectionId
-    if ($output -match "has been enabled")
+
+    # Wait for connection to reach connected state (3) regardless of initial output
+    $elapsed = 0
+    do
     {
-        Write-Host "Connection '$displayName' ($actualConnectionId) enabled"
-        # Add to connection history
-        Add-SCConnectionHistory -ConnectionName $actualConnectionId -DisplayName $displayName
+        Start-Sleep -Seconds 1
+        $elapsed++
+        $currentConnection = Get-SCList | Where-Object { $_.name -eq $actualConnectionId }
+        Write-Host "." -NoNewline -ForegroundColor Gray
+    } while ($currentConnection -and $currentConnection.vpn_state -ne "3" -and $elapsed -lt $TimeoutSeconds)
+
+    Write-Host ""  # New line after dots
+
+    # Check final state
+    $finalConnection = Get-SCList | Where-Object { $_.name -eq $actualConnectionId }
+    if ($finalConnection -and $finalConnection.vpn_state -eq "3")
+    {
+        Write-Host "Connection '$displayName' ($actualConnectionId) established" -ForegroundColor Green
+    } elseif ($elapsed -ge $TimeoutSeconds)
+    {
+        Write-Warning "Timeout waiting for connection to '$displayName' ($actualConnectionId)"
     } else
     {
         Write-Warning "Failed to enable connection '$displayName' ($actualConnectionId)"
@@ -481,10 +528,7 @@ Set-Alias -Name "scconnect" -Value "Enable-SCConnection"
 Set-Alias -Name "scon" -Value "Enable-SCConnection"
 Set-Alias -Name "scoff" -Value "Disable-SCConnection"
 Set-Alias -Name "scmenu" -Value "Show-SCConnectionMenu"
-Set-Alias -Name "sclast" -Value "Connect-SCLastUsed"
 Set-Alias -Name "scwatch" -Value "Watch-SCStatus"
-
-Set-Alias -Name "schistory" -Value "Get-SCConnectionHistory"
 
 function Get-SCStatus
 {
@@ -622,113 +666,7 @@ function Show-SCConnectionMenu
     }
 }
 
-function Connect-SCLastUsed
-{
-    <#
-    .SYNOPSIS
-    Connects to the last used VPN connection.
 
-    .DESCRIPTION
-    Reads the connection history and connects to the most recently used connection.
-    Useful for quickly reconnecting to your usual VPN.
-
-    .EXAMPLE
-    Connect-SCLastUsed
-    Connects to the last used connection
-    #>
-
-    $history = Get-SCConnectionHistory
-    if (-not $history -or $history.Count -eq 0)
-    {
-        Write-Warning "No connection history found"
-        return
-    }
-
-    $lastConnection = $history[0]
-    Write-Host "Connecting to last used: $($lastConnection.DisplayName)" -ForegroundColor Yellow
-    Enable-SCConnection -ConnectionId $lastConnection.Name -Force
-}
-
-function Get-SCConnectionHistory
-{
-    <#
-    .SYNOPSIS
-    Gets the connection history from a local file.
-
-    .DESCRIPTION
-    Maintains a simple history of VPN connections for quick reconnection.
-    History is stored in the user's temp directory.
-
-    .EXAMPLE
-    Get-SCConnectionHistory
-    Shows recent connection history
-    #>
-
-    $historyFile = Join-Path -Path $env:TEMP -ChildPath "sophos-connect-history.json"
-
-    if (-not (Test-Path $historyFile))
-    {
-        return @()
-    }
-
-    try
-    {
-        $history = Get-Content $historyFile | ConvertFrom-Json
-        return $history | Select-Object -First 10  # Keep only last 10
-    } catch
-    {
-        Write-Warning "Could not read connection history"
-        return @()
-    }
-}
-
-function Add-SCConnectionHistory
-{
-    <#
-    .SYNOPSIS
-    Adds a connection to the history.
-
-    .DESCRIPTION
-    Internal function to track connection usage for the last used functionality.
-
-    .PARAMETER ConnectionName
-    The connection name/ID
-
-    .PARAMETER DisplayName
-    The connection display name
-    #>
-
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$ConnectionName,
-        [Parameter(Mandatory=$true)]
-        [string]$DisplayName
-    )
-
-    $historyFile = Join-Path -Path $env:TEMP -ChildPath "sophos-connect-history.json"
-
-    $history = Get-SCConnectionHistory
-
-    # Remove existing entry if present
-    $history = $history | Where-Object { $_.Name -ne $ConnectionName }
-
-    # Add new entry at the top
-    $newEntry = @{
-        Name = $ConnectionName
-        DisplayName = $DisplayName
-        Timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    }
-
-    $history = @($newEntry) + $history | Select-Object -First 10
-
-    try
-    {
-        $history | ConvertTo-Json | Out-File $historyFile -Encoding UTF8
-    } catch
-    {
-        # Ignore history save errors
-    }
-}
 
 function Watch-SCStatus
 {
@@ -777,77 +715,6 @@ function Watch-SCStatus
     }
 }
 
-
-
-function Export-SCConfig
-{
-    <#
-    .SYNOPSIS
-    Exports VPN connection configuration to a JSON file.
-
-    .DESCRIPTION
-    Creates a backup of current VPN connection settings that can be used
-    for documentation or troubleshooting purposes.
-
-    .PARAMETER Path
-    The path where to save the configuration file
-
-    .EXAMPLE
-    Export-SCConfig -Path "vpn-backup.json"
-    Exports configuration to a file
-    #>
-
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Path
-    )
-
-    $connections = Get-SCList
-
-    if (-not $connections)
-    {
-        Write-Host "No connections to export" -ForegroundColor Red
-        return
-    }
-
-    $config = @{
-        ExportDate = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-        ConnectionCount = $connections.Count
-        Connections = $connections
-    }
-
-    try
-    {
-        $config | ConvertTo-Json -Depth 5 | Out-File $Path -Encoding UTF8
-        Write-Host "Configuration exported to: $Path" -ForegroundColor Green
-        Write-Host "Exported $($connections.Count) connections" -ForegroundColor Gray
-    } catch
-    {
-        Write-Host "Failed to export configuration: $_" -ForegroundColor Red
-    }
-}
-
-function Test-SCLibrary
-{
-    Get-SCList | ForEach-Object {
-        Enable-SCConnection -ConnectionId $_.name
-        Write-Host "Checking $($_.display_name) connection status"
-        Start-Sleep -Seconds 10
-        $connected = Get-SCConnected
-        if ($connected)
-        {
-            Write-Host "Connected to $($_.display_name)"
-        } else
-        {
-            Write-Warning "Failed to connect to $($_.display_name)"
-        }
-        Start-Sleep -Seconds 5
-        Disable-SCConnection -ConnectionId $_.name
-        Write-Host "Disconnected from $($_.display_name)"
-        Start-Sleep -Seconds 5
-    }
-}
-
 # Module initialization message
 Write-Host "Sophos Connect PowerShell Library loaded!" -ForegroundColor Green
 Write-Host "Available commands:" -ForegroundColor Gray
@@ -856,7 +723,7 @@ Write-Host "  sclist       - List all connections" -ForegroundColor Cyan
 Write-Host "  scmenu       - Interactive connection menu" -ForegroundColor Cyan
 Write-Host "  scon <name>  - Connect to VPN" -ForegroundColor Cyan
 Write-Host "  scoff <name> - Disconnect from VPN" -ForegroundColor Cyan
-Write-Host "  sclast       - Connect to last used VPN" -ForegroundColor Cyan
+
 Write-Host "  scdisconnect - Disconnect all VPNs" -ForegroundColor Cyan
 Write-Host "  scwatch      - Monitor VPN status" -ForegroundColor Cyan
 
