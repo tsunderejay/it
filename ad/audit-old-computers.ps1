@@ -17,4 +17,4 @@ $computers = get-adcomputer -filter {
     -and lastlogondate -lt $date
 } -properties *
 
-$computers | sort-object lastlogondate | select-object name,operatingsystem,lastlogondate
+$computers | sort-object lastlogondate

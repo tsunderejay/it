@@ -16,4 +16,4 @@ $users = get-aduser -filter {
     -and lastlogondate -lt $date
 } -properties *
 
-$users | sort-object lastlogondate | select-object name,displayname,lastlogondate
+$users | sort-object lastlogondate
