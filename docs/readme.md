@@ -1,14 +1,4 @@
 # it related scripts
-each folder corresponds to an aspect of IT management
+this repot contains scripts pertaining to different systems that I use on my day-to-day basis.
 
-## 365
-script to use with Microsoft 365
-
-## ad
-scripts to manage Active Directory
-
-## server
-scripts to manage servers
-
-## utils
-utility scripts with various functionality to them
+I also upload documentation on features I have found in here too.
